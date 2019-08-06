@@ -2,6 +2,11 @@ snippets.py
 .DS_Store
 services/elastic-stack/.esdata/
 trained_models/
+images/
+pipeline-reports/
+
+#VSCode
+.vscode/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

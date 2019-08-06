@@ -3,6 +3,11 @@ services:
     scipy-notebook:
         image: jupyter/scipy-notebook:17aba6048f44
         volumes:
-            - .:/home/jovyan/work
+            - ../:/home/jovyan/work
         ports:
             - "8888:8888"
+
+networks:
+  default:
+    external:
+      name: vacancyTextClassifier_default
