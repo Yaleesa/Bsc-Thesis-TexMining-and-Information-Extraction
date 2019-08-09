@@ -60,7 +60,7 @@ class TextClassification:
 
         else:
             text_train, text_test, y_train, y_test = train_test_split(
-                    text, y, test_size=0.25, random_state=2)
+                    text, y, test_size=0.25, random_state=2, stratify=True)
 
             return text_train, text_test, y_train, y_test, text, y
 
@@ -85,10 +85,24 @@ class TextClassification:
 
         return model
 
-    def train_model(self, text_train, y_train, wanted_clf):
-        model = self.model_pipeline(wanted_clf)
-        model.fit(text_train, y_train)
-        return model
+    def grid_search(self, wanted_clf, X, y):
+        clf = self.model_pipeline(wanted_clf)
+        parameters = {
+            'vect__ngram_range': [(1, 1), (1, 2)],
+            'tfidf__use_idf': (True, False),
+            #'clf__alpha': (1e-2, 1e-3),
+        }
+  
+        grid_clf = GridSearchCV(clf, parameters, cv=10, iid=False, n_jobs=-1)
+        grid_clf.fit(X, y)
+
+        #print(grid_clf.cv_results_)
+        print(grid_clf.best_estimator_.get_params())
+        return {'model':grid_clf.best_estimator_, 'best_params': grid_clf.best_estimator_.get_params()}
+
+    def train_model(self, X, y, wanted_clf):
+        best_model = self.grid_search(wanted_clf, X, y)
+        return best_model
 
     def model_save(self, clf, filename):
         dump(clf, f'trained_models/{filename}.joblib')
@@ -100,8 +114,8 @@ class CrossValidation:
     def cross_validation(self, X, y, wanted_clf):
         skf = StratifiedKFold(n_splits=10)
         clf = self.TextClassifier.train_model(X, y, wanted_clf)
-        scores = cross_val_score(clf, X, y, cv=skf)
-        y_pred = cross_val_predict(clf, X, y, cv=skf)
+        scores = cross_val_score(clf['model'], X, y, cv=skf)
+        y_pred = cross_val_predict(clf['model'], X, y, cv=skf)
         return scores, y_pred
     
 
@@ -240,7 +254,7 @@ class HyperParameterTuning:
 
         print(list(tfidf.vocabulary_.keys())[:10])
 
-    def grid_search(self, X, y, wanted_clf):
+    def grid_search(self, wanted_clf, X, y):
         clf = self.TextClassifier.model_pipeline(wanted_clf)
         parameters = {
             'vect__ngram_range': [(1, 1), (1, 2)],
@@ -250,61 +264,11 @@ class HyperParameterTuning:
         grid_clf = GridSearchCV(clf, parameters, cv=10, iid=False, n_jobs=-1)
         grid_clf.fit(X, y)
 
-        print(grid_clf.best_score_)
-        print(grid_clf.cv_results_)
+        #print(grid_clf.cv_results_)
         print(grid_clf.best_estimator_.get_params())
+        return grid_clf.best_estimator_
 
-class ClassificationReports:
-    def __init__(self, data_size='all', data_unique=True, filepath=''):
-        self.data_size = data_size
-        self.data_unique = data_unique
-        self.filepath = filepath
-        self.TextClassifier = TextClassification()
-        self.DataExploration = DataExploration(filepath=self.filepath)
-        self.CrossValidation = CrossValidation()
 
-    def predictions(self, model, text_test):
-        predictions = model.predict(text_test)
-        return predictions
-
-    def scoring(self, y_test, y_pred):
-        accuracy = 'accuracy %s' % accuracy_score(y_pred, y_test)
-        columns = np.unique(y_test)
-        report = classification_report(y_test, y_pred,target_names=columns)
-        return accuracy, report
-
-    def cross_validation_report(self, clf, X, y, folds=10, kijkdoos=False, vis=False):
-        scores, y_pred = self.CrossValidation.cross_validation(X, y, clf)
-        mean = scores.mean()
-        accuracy, report = self.scoring(y, y_pred)
-        print(f'''
-        Cross Validation - {str(folds)} folds
-        \n
-        classifier: {clf}
-        Mean score: {mean}
-        {accuracy}
-        Data: {self.data_size}
-        Unique: {str(self.data_unique)}\n
-        \n{report}
-        ''')
-        title = f'Cross Validation: {clf} - Data: {self.data_size} Unique: {str(self.data_unique)}'
-        if vis:
-            #self.DataExploration.confusion_matrix_vis(title, y, y_pred, save_graph=True)
-            self.DataExploration.plot_cm(title, y, y_pred)
-        if kijkdoos:
-            self.DataExploration.kijkdoos(X, y, y_pred, 'Title')
-
-    def scoring_report(self, clf, model, X, y):
-        y_pred = self.predictions(model, X)
-        accuracy, report = self.scoring(y, y_pred)
-        print(f'''
-        Trained model tested on test data:\n\n
-        \tclassifier: {clf} \n
-        \t{accuracy}\n
-        \n{report}
-        ''')
-        self.DataExploration.plot_cm(f'wild - data - {clf}', y, y_pred)
-        self.DataExploration.kijkdoos(X, y, y_pred, 'location')
 
 class ClassificationPipeline:
     def __init__(self, clf=None, dataset=None, data_size='all', data_unique=True, filepath_prefix=''):
@@ -319,6 +283,7 @@ class ClassificationPipeline:
         self.Features = FeatureSelection()
         self.TextClassifier = TextClassification()
         self.Reports = ClassificationReports(self.data_size, self.data_unique)
+        self.Tuning = HyperParameterTuning()
 
     def exploration(self):
         dataframe = self.DataPreProcessor.to_dataframe(self.dataset)
@@ -330,6 +295,7 @@ class ClassificationPipeline:
             dataframe = self.DataCleaner.unique(dataframe)
 
         X, y = self.TextClassifier.splitting_dataset(self.data_size, dataframe)
+        self.Tuning.grid_search(self.clf, X, y)
         #self.Features.decision_tree_report(X, y)
         #self.Features.select_tree(X, y)
         #self.Features.linear_reg_report(X, y)
@@ -386,12 +352,12 @@ if __name__ == '__main__':
     dataset = es.import_dataset(dataset_scraped, include_scraped)
     filepath_prefix = f'pipeline-reports/{dataset_name}/{timestamp}'
     os.makedirs(filepath_prefix, exist_ok=True) 
-    list_of_clf = ['NB', 'SVM', 'LR', 'SGD']
+    list_of_clf = ['SVM', 'SGD']
     for clf in list_of_clf:
         pipeline = ClassificationPipeline(clf=clf, dataset=dataset, data_size='all', filepath_prefix=filepath_prefix)
         #pipeline.exploration()
-        #pipeline.cross_validation()
-        pipeline.training(save_model=True)
+        pipeline.cross_validation()
+        #pipeline.training(save_model=True)
 
 
 

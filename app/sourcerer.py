@@ -146,14 +146,16 @@ class DescriptionCleaner:
         return self.dataset
 
 if __name__ == '__main__':
-    data = XMLifier().xml_to_dict('https://www.studentjob.co.uk/feed/jooble.xml?include_scraped=true')
+    data = XMLifier().xml_to_dict('https://www.studentjob.co.uk/feed/jooble.xml?include_redirect_jobs=true')
     cleaned_data = DescriptionCleaner(data).replace()
 
     es = Elasticer()
-    es.list_to_elastic('sj-uk-vacancies-scraped-cleaned-3', cleaned_data)
+    es.list_to_elastic('sj-uk-vacancies-cleaned-4', cleaned_data)
 
 '''
 'https://www.studentjob.co.uk/feed/jooble.xml?include_scraped=true'
+'https://www.studentjob.co.uk/feed/jooble.xml?include_scraped=false'
+https://www.studentjob.co.uk/feed/jooble.xml?include_redirect_jobs=true
 responsibilities
 qualifications
 jobBenefits

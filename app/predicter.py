@@ -18,7 +18,8 @@ import seaborn as sns
 import numpy as np
 from elasticer import Elasticer
 
-from trainer import ClassificationReports, DataExploration, DataPreProcessor, DataCleaner
+from preprocessor import DataPreProcessor, DataCleaner
+
 now = datetime.now()
 timestamp = now.strftime("%d%m%Y-%H:%M")
 
@@ -29,42 +30,50 @@ NB = 'model-NB-28062019-12:14.joblib'
 SGD = 'SGD-all-True-05082019-11:22.joblib'
 SVM = 'SVM-all-True-05082019-11:22.joblib'
 
-modelNB = load(f'trained_models/{NB}')
-modelSGD = load(f'trained_models/{SGD}')
-modelSVM = load(f'trained_models/{SVM}')
+modelNB = load(f'../data/trained_models/bow_models/{NB}')
+modelSGD = load(f'../data/trained_models/bow_models/{SGD}')
+modelSVM = load(f'../data/trained_models/bow_models/{SVM}')
 
 
 
-es = Elasticer()
-dataset_xml = 'sj-uk-vacancies-scraped-cleaned-3'
-exclude_xml = ['@language', 'DatePlaced', 'Id', 'companyLogo', 'country', 'topjob', 'HoursWeek', 'JobUrl', 'JobMinDaysPerWeek', 'JobParttime', 'JobCompanyBranch', 'JobCompanyProfile', 'JobRequirements.MinAge']
-include_xml = ['JobBranch', 'JobCategory', 'JobCompany', 'JobDescription','JobLocation.LocationRegion', 'JobProfession', 'Title','TitleDescription', 'functionTitle', 'postalCode', 'profession']
+class xmlRemapper:
+    def __init__(self):
+        self.es = Elasticer()
     
+        self.cleaner = DataCleaner()
+        self.dataset_xml = 'sj-uk-vacancies-cleaned-4'
+        self.exclude_xml = ['@language', 'DatePlaced', 'Id', 'companyLogo', 'country', 'topjob', 'HoursWeek', 'JobUrl', 'JobMinDaysPerWeek', 'JobParttime', 'JobCompanyBranch', 'JobCompanyProfile', 'JobRequirements.MinAge']
+        self.include_xml = ['JobBranch', 'JobCategory', 'JobCompany', 'JobDescription','JobLocation.LocationRegion', 'JobProfession', 'Title','TitleDescription', 'functionTitle', 'postalCode', 'profession']
+            
+    def import_data(self):
+        dataset = self.es.import_dataset(self.dataset_xml, self.include_xml)
+        dataframe = self.prepro.to_dataframe(dataset)
+        return dataframe
 
-dataset = es.import_dataset(dataset_xml, include_xml)
+    def remap(self, dataframe):
+        rename_dict = {'Title': 'vacancy_title',
+                        'functionTitle': 'vacancy_title',
+                        'TitleDescription': 'introduction',
+                        'JobCategory': 'contract_type',
+                        'JobBranch': 'job_category',
+                        'JobDescription': 'description',
+                        'profession': 'job_category',
+                        'JobLocation.LocationRegion': 'location',
+                        'postalCode': 'location',
+                        'JobCompany': 'company_name',
+                        'JobProfession': 'job_category'}
+        dataframe.rename(columns=rename_dict, inplace=True)
+        return dataframe
 
-prepro = DataPreProcessor()
-cleaner = DataCleaner()
-
-dataframe = prepro.to_dataframe(dataset)
-
-
-rename_dict = {'Title': 'vacancy_title',
-                'functionTitle': 'vacancy_title',
-                'TitleDescription': 'introduction',
-                'JobCategory': 'contract_type',
-                'JobBranch': 'job_category',
-                'JobDescription': 'description',
-                'profession': 'job_category',
-                'JobLocation.LocationRegion': 'location',
-                'postalCode': 'location',
-                'JobCompany': 'company_name',
-                'JobProfession': 'job_category'}
-dataframe.rename(columns=rename_dict, inplace=True)
-
-dataframe = prepro.transform_dataframe(dataframe)
-dataframe = cleaner.remove_values(dataframe, 'None')
-
+    def get_dataframe(self):
+        self.prepro = DataPreProcessor()
+        dataframe = self.import_data()
+        dataframe = self.remap(dataframe)
+        dataframe = self.prepro.transform_dataframe(dataframe)
+        dataframe = self.cleaner.remove_values(dataframe, 'None')
+        dataframe = self.cleaner.lowercase(dataframe)
+        dataframe = self.cleaner.remove_stopwords(dataframe)
+        return dataframe
 
 def predict(title, model, dataframe):
     reports = ClassificationReports()
@@ -79,5 +88,9 @@ def predict(title, model, dataframe):
     #print(zipped)
 
   
+if __name__ == '__main__':
+    xml_data = xmlRemapper().get_dataframe()
+    predict('SGD_unseen_data', modelSGD, xml_data)
+    predict('SVM_unseen_data', modelSVM, xml_data)
 
-predict(SGD, modelSGD, dataframe)
+

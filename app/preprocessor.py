@@ -2,9 +2,17 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+from nltk import word_tokenize
+from nltk.corpus import stopwords
 
+stop_words = set(stopwords.words('english'))
 
 class DataPreProcessor:
+    def __init__(self, data):
+        self.data = data
+        self.dataframe = self.to_dataframe(self.data)
+        self.transformed_df = self.transform_dataframe(self.dataframe)
+
     def to_dataframe(self, documents):
         '''
         make a dataframe from the list of dicts
@@ -47,3 +55,11 @@ class DataCleaner:
     def unique(self, dataframe):
         dropped_df = dataframe.drop_duplicates()
         return dropped_df
+
+    def lowercase(self, dataframe):
+        dataframe['text'] = dataframe['text'].apply(lambda row:' '.join([w.lower() for w in word_tokenize(row)]) )
+        return dataframe
+
+    def remove_stopwords(self, dataframe):
+        dataframe['text'] = dataframe['text'].apply(lambda row:' '.join([w for w in word_tokenize(row) if w not in stop_words]) )
+        return dataframe
