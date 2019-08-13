@@ -1,10 +1,19 @@
+'''
+Author: Yaleesa Borgman
+Date: 8-8-2019
+predicter.py - handles predictions from imported models
+'''
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+import nltk
 from nltk import word_tokenize
 from nltk.corpus import stopwords
 
+nltk.download('stopwords')
+nltk.download('punkt')
 stop_words = set(stopwords.words('english'))
 
 class DataPreProcessor:
@@ -62,4 +71,33 @@ class DataCleaner:
 
     def remove_stopwords(self, dataframe):
         dataframe['text'] = dataframe['text'].apply(lambda row:' '.join([w for w in word_tokenize(row) if w not in stop_words]) )
+        return dataframe
+
+class xmlRemapper:
+    def __init__(self):
+        self.es = Elasticer()
+    
+        self.cleaner = DataCleaner()
+        self.dataset_xml = 'sj-uk-vacancies-cleaned-4'
+        self.exclude_xml = ['@language', 'DatePlaced', 'Id', 'companyLogo', 'country', 'topjob', 'HoursWeek', 'JobUrl', 'JobMinDaysPerWeek', 'JobParttime', 'JobCompanyBranch', 'JobCompanyProfile', 'JobRequirements.MinAge']
+        self.include_xml = ['JobBranch', 'JobCategory', 'JobCompany', 'JobDescription','JobLocation.LocationRegion', 'JobProfession', 'Title','TitleDescription', 'functionTitle', 'postalCode', 'profession']
+            
+    def import_data(self):
+        dataset = self.es.import_dataset(self.dataset_xml, self.include_xml)
+
+        return dataset
+
+    def remap(self, dataframe):
+        rename_dict = {'Title': 'vacancy_title',
+                        'functionTitle': 'vacancy_title',
+                        'TitleDescription': 'introduction',
+                        'JobCategory': 'contract_type',
+                        'JobBranch': 'job_category',
+                        'JobDescription': 'description',
+                        'profession': 'job_category',
+                        'JobLocation.LocationRegion': 'location',
+                        'postalCode': 'location',
+                        'JobCompany': 'company_name',
+                        'JobProfession': 'job_category'}
+        dataframe.rename(columns=rename_dict, inplace=True)
         return dataframe

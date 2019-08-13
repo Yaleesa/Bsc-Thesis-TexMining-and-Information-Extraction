@@ -1,3 +1,8 @@
+'''
+Author: Yaleesa Borgman
+Date: 8-8-2019
+explorer.py - exploration of data
+'''
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 
 # Pandas & Numpy & vis

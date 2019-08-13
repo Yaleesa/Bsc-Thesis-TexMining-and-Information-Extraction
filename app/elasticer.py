@@ -1,3 +1,8 @@
+'''
+Author: Yaleesa Borgman
+Date: 8-8-2019
+GET and POST for elasticsearch
+'''
 from elasticsearch import Elasticsearch, helpers
 import json
 
@@ -5,6 +10,7 @@ import json
 class Elasticer:
     def __init__(self):
         self.es = Elasticsearch(host="127.0.0.1")
+        #self.es = Elasticsearch(host="elasticsearch")
 
     def import_dataset(self, indexname, include_list):
         '''
@@ -17,7 +23,7 @@ class Elasticer:
         return documents
 
 
-    def to_elastic(self, indexname, data):
+    def dict_to_elastic(self, indexname, data):
         actions = [
             {
             "_index" : indexname,
@@ -37,6 +43,4 @@ class Elasticer:
             }
         for record in data
         ]
-        actions = json.dumps(actions)
-        actions = json.loads(actions)
         helpers.bulk(self.es,actions, index=indexname)

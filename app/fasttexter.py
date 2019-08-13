@@ -1,25 +1,32 @@
+'''
+Author: Yaleesa Borgman
+Date: 8-8-2019
+fasttexter.py - handles the fastText python library and return scoring 
+'''
 from sklearn.model_selection import train_test_split, cross_val_predict, cross_val_score, StratifiedKFold, GridSearchCV
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
-
-from elasticer import Elasticer
-from explorer import DataExploration
-from preprocessor import DataPreProcessor, DataCleaner
-from predicter import xmlRemapper
-from reporter import ClassificationReports
 import pandas as pd
 import numpy as np
 import fasttext
 import nltk
 from nltk import word_tokenize
 
-import os, csv
-from datetime import datetime
+from elasticer import Elasticer
+from explorer import DataExploration
+from preprocessor import DataPreProcessor, DataCleaner
+from predicter import xmlRemapper
+from reporter import ClassificationReports
+
 now = datetime.now()
 timestamp = now.strftime("%d%m%Y-%H:%M")
 
-
-
 class FastTexter:
+    '''
+    fastText class. 
+    - name & filepath
+    - trainfile & testfile
+    returns self.model
+    '''
     def __init__(self, name):
         self.name = name
         self.filepath = '../data/trained_models/fasttext_models'
@@ -65,19 +72,20 @@ class FastTexter:
         validation = self.model.test(testfile)
         score = {ngrams:{"N":int(validation[0]), "P@1": "{0:.3f}".format(validation[1]),"R@1": "{0:.3f}".format(validation[2])}}
         
-        #self.print_results(*self.model.test(testfile))
-        
         words, freq = self.model.get_words(include_freq=True)
         return score
 
-    def compress_save(self):
-        self.model.quantize(input=self.trainfile, retrain=True)
+    def compress_save(self, trainfile):
+        self.model.quantize(input=trainfile, retrain=True)
         modelname = f"{self.filepath}/model_fasttext_{self.name}-{timestamp}.ftz"
         self.model.save_model(modelname)
         return modelname
 
 class FastTextPipeline:
-    def __init__(self, name, lowercase=True, stopw=True, report='score'):
+    '''
+    pre-set pipeline, uses the other modules for cleaning etc in pipeline
+    '''
+    def __init__(self, name, lowercase=True, stopw=True, report='full'):
         self.name = name
         self.lowercase = lowercase
         self.stopw = stopw
@@ -85,9 +93,8 @@ class FastTextPipeline:
         self.modelname = ''
         self.fasttexter = FastTexter(name=self.name)
         self.explorer = DataExploration(filepath='../data/fasttext-report')
-        self.reporter = ClassificationReports()
+        self.reporter = ClassificationReports(title=self.name)
         
-
     def preprocessing(self, data, missing='Unknown'):
         Processor = DataPreProcessor(data)
         Cleaner = DataCleaner()
@@ -111,7 +118,7 @@ class FastTextPipeline:
     def train_model(self, ngrams, save_model=False):
         score = self.fasttexter.classification(self.trainfile, self.testfile, ngrams)
         if save_model:
-            self.modelname = self.fasttexter.compress_save()  
+            self.modelname = self.fasttexter.compress_save(self.trainfile)  
         return score
 
     def ngrams_performance(self):
@@ -122,22 +129,6 @@ class FastTextPipeline:
             score_dict.update(score)
         return score_dict
 
-    def file_predictions(self):
-        model = fasttext.load_model(self.modelname)
-
-
-        label_scores = model.test_label(self.testfile)
-        dataframe = pd.DataFrame(label_scores)
-
-        if self.report == 'full':
-            print(f'''
-            Trained model tested on testfile.txt data:\n\n
-            -> {self.name}\n
-            \tclassifier: fasttext \n\n
-            \t{self.fasttexter.print_results(*self.fasttexter.model.test(testfile))}\n\n
-            \t{dataframe.T}\n
-            ''')
-
     def scoring(self, y, y_pred):
         accuracy = 'accuracy %s' % accuracy_score(y_pred, y)
         columns = np.unique(y)
@@ -146,15 +137,29 @@ class FastTextPipeline:
 
     def scoring_report(self, title, y, y_pred):
         accuracy, report = self.scoring(y, y_pred)
-        print(f'''
+        return f'''
         Trained model tested on test data:\n\n
         -> {title}\n
         \tclassifier: fasttext \n
         \t{accuracy}\n
         \n{report}
-        ''')
-        self.reporter.confusion_matrix_vis(y=y, y_pred=y_pred, filepath='../data/fasttext-reports',title=f'fasttext-{title}')
-        #self.DataExploration.kijkdoos(X, y, y_pred, 'location')
+        '''
+        self.reporter.confusion_matrix_vis(y=y, y_pred=y_pred, filepath='../data/fasttext-reports',title=f'fasttext{self.name}', figsize=(11,13))
+        self.reporter.kijkdoos(X, y, y_pred, 'location')
+
+    def file_predictions(self):
+        model = fasttext.load_model(self.modelname)
+        label_scores = model.test_label(self.testfile)
+        dataframe = pd.DataFrame(label_scores)
+
+        if self.report == 'full':
+            print(f'''
+            Trained model tested on testfile.txt data:\n\n
+            \t{self.name}\n
+            \tclassifier: fasttext \n\n
+            \t{self.fasttexter.print_results(*self.fasttexter.model.test(testfile))}\n\n
+            \t{dataframe.T}\n
+            ''')
 
     def dataframe_predictions(self, modelname, dataframe):
         model = fasttext.load_model(modelname)
@@ -177,38 +182,8 @@ class FastTextPipeline:
 
         accuracy, report = self.scoring(y, y_pred)
         if self.report == 'full':
-            self.scoring_report(self.name,y, y_pred)
-            self.reporter.confusion_matrix_vis(y=y, y_pred=y_pred, filepath='../data/fasttext-reports',title=f'fasttext-{self.name}')
+            score = self.scoring_report(self.name,y, y_pred)
+            print(score)
 
         return accuracy
 
-if __name__ == '__main__':
-        include = ['company_name', 'introduction', 'location', 'vacancy_title', 'description', 'job_category', 'contract_type']
-        scrp_dataset = Elasticer().import_dataset('scrapy_test-early_mornin_4', include)
-        #xml_data = xmlRemapper().get_dataframe()
-        #print(xml_data[xml_data['label'] == 'introduction'])
-
-        #modelname = 'model_fasttext_07082019-01:29.ftz'
-        #modelname_low = 'model_fasttext_scrp_lowercased-07082019-06:17.ftz'
-        testfile = '../data/unseen_test.txt.txt'
-
-        # original = FastTextPipeline('original_dataset', lowercase=False, stopw=False)
-        # original.prepare_files(scrp_dataset)
-        # score = original.ngrams_performance()
-        # df = pd.DataFrame(score)
-        # print(df)
-
-        # low_case = FastTextPipeline('scrp_lowercased', stopw=False)
-        # low_case.prepare_files(scrp_dataset)
-        # score = low_case.ngrams_performance()
-        # df = pd.DataFrame(score)
-        # print(df)
-
-        low_case_minstop = FastTextPipeline('scrp_lowercased_minstop')
-        low_case_minstop.prepare_files(scrp_dataset)
-        low_case_minstop.train_model(1, save_model=True)
-        # score = low_case_minstop.ngrams_performance()
-        # df = pd.DataFrame(score)
-        # print(df)
-        low_case_minstop.file_predictions()
-        #FastTextPipeline('scrp_to_xml').dataframe_predictions(modelname, xml_data)

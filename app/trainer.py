@@ -1,4 +1,10 @@
 '''
+Author: Yaleesa Borgman
+Date: 8-8-2019
+trainer.py - handles the text classification, can be used stand alone or with pipeline class 
+'''
+
+'''
 Sklearn
 '''
 from sklearn.model_selection import train_test_split, cross_val_predict, cross_val_score, StratifiedKFold, GridSearchCV
@@ -11,7 +17,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import LinearSVC
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, f1_score
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from joblib import dump, load
@@ -42,6 +48,7 @@ Modules
 from elasticer import Elasticer
 from explorer import DataExploration
 from preprocessor import DataPreProcessor, DataCleaner
+from reporter import ClassificationReports
 
 class TextClassification:
     '''
@@ -64,7 +71,7 @@ class TextClassification:
 
             return text_train, text_test, y_train, y_test, text, y
 
-    def model_pipeline(self, wanted_clf):
+    def model_pipeline(self, wanted_clf, X, y):
         '''
         training pipeline
         '''
@@ -83,6 +90,7 @@ class TextClassification:
                        ('clf', classifiers[wanted_clf]),
                       ])
 
+        model.fit(X, y)
         return model
 
     def grid_search(self, wanted_clf, X, y):
@@ -101,8 +109,10 @@ class TextClassification:
         return {'model':grid_clf.best_estimator_, 'best_params': grid_clf.best_estimator_.get_params()}
 
     def train_model(self, X, y, wanted_clf):
-        best_model = self.grid_search(wanted_clf, X, y)
-        return best_model
+        #best_model = self.grid_search(wanted_clf, X, y)
+        clf = self.model_pipeline(wanted_clf, X, y)
+        #clf.fit(X, y)
+        return clf
 
     def model_save(self, clf, filename):
         dump(clf, f'trained_models/{filename}.joblib')
@@ -114,10 +124,15 @@ class CrossValidation:
     def cross_validation(self, X, y, wanted_clf):
         skf = StratifiedKFold(n_splits=10)
         clf = self.TextClassifier.train_model(X, y, wanted_clf)
-        scores = cross_val_score(clf['model'], X, y, cv=skf)
-        y_pred = cross_val_predict(clf['model'], X, y, cv=skf)
+        scores = cross_val_score(clf, X, y, cv=skf)
+        y_pred = cross_val_predict(clf, X, y, cv=skf)
         return scores, y_pred
     
+    def cross_validation_report(self, X, y, wanted_clf, kijkdoos=False, vis=True):
+        reports = ClassificationReports()
+        scores, y_pred = self.cross_validation(X, y, wanted_clf)
+        report = reports.cv_report(wanted_clf, scores, y, y_pred, vis=True)
+        return report, y_pred 
 
 class FeatureSelection: 
     def __init__(self):
@@ -162,22 +177,19 @@ class FeatureSelection:
         tfidf = self.tfidf_vectorizer()
         features_train = tfidf.fit_transform(X).toarray()
         labels_train = y
-        print(features_train)
         categories = np.unique(y)
+        grams_list = []
         for category in categories:
-
+            #source: https://towardsdatascience.com/multi-class-text-classification-with-scikit-learn-12f1e60e0a9f
             features_chi2 = chi2(features_train, labels_train == category)
             indices = np.argsort(features_chi2[0])
             feature_names = np.array(tfidf.get_feature_names())[indices]
             unigrams = [v for v in feature_names if len(v.split(' ')) == 1]
             bigrams = [v for v in feature_names if len(v.split(' ')) == 2]
 
-            #unit = {category: {'unigrams':unigrams, 'bigrams':bigrams}}
-            #print(unit)
-            print(f"'{category}'\n")
-            print("unigrams:\n. {}".format('\n. '.join(unigrams[-5:])))
-            print("bigrams:\n. {}".format('\n. '.join(bigrams[-3:])))
-            print("")
+            grams_list.update({category: {'unigrams':unigrams, 'bigrams':bigrams}})
+        return grams_list
+   
 
     def linear_reg_report(self, X, y):
         clf = self.TextClassifier.train_model(X, y, 'LR')
@@ -206,8 +218,6 @@ class FeatureSelection:
                                     columns=['importance']).sort_values('importance', ascending=False)
 
         print(feature_importances.head(15))
-
-
 
     def dimenion_reduction(self, model, features, labels, n_components=2, save_graph=False):
 
@@ -271,13 +281,15 @@ class HyperParameterTuning:
 
 
 class ClassificationPipeline:
+    '''
+    I know, this is not how OO programming works. pls spare me
+    '''
     def __init__(self, clf=None, dataset=None, data_size='all', data_unique=True, filepath_prefix=''):
         self.clf = clf
         self.dataset = dataset
         self.data_size = data_size
         self.data_unique = data_unique
         self.filepath = filepath_prefix
-        self.DataPreProcessor = DataPreProcessor()
         self.DataCleaner = DataCleaner()
         self.DataExploration = DataExploration(filepath=self.filepath)
         self.Features = FeatureSelection()
@@ -286,10 +298,8 @@ class ClassificationPipeline:
         self.Tuning = HyperParameterTuning()
 
     def exploration(self):
-        dataframe = self.DataPreProcessor.to_dataframe(self.dataset)
-        #dataframe = self.DataPreProcessor.remove_categories(dataframe,['JobLocation', 'JobRequirements', 'JobCompany'])
-
-        dataframe = self.DataPreProcessor.transform_dataframe(dataframe)
+        DataPreProc = DataPreProcessor(self.dataset)
+        dataframe = DataPreProc.transformed_df
         dataframe = self.DataCleaner.remove_values(dataframe, 'Unknown')
         if self.data_unique:
             dataframe = self.DataCleaner.unique(dataframe)
@@ -304,23 +314,25 @@ class ClassificationPipeline:
         return dataframe
 
     def cross_validation(self):
-        dataframe = self.DataPreProcessor.to_dataframe(self.dataset)
-        dataframe = self.DataPreProcessor.transform_dataframe(dataframe)
+        DataPreProc = DataPreProcessor(self.dataset)
+        dataframe = DataPreProc.transformed_df
         dataframe = self.DataCleaner.remove_values(dataframe, 'Unknown')
         if self.data_unique:
             dataframe = self.DataCleaner.unique(dataframe)
 
         if self.data_size == 'all':
             X, y = self.TextClassifier.splitting_dataset(self.data_size, dataframe)
-            self.Reports.cross_validation_report(self.clf, X, y, vis=True)
+            crossval = CrossValidation()
+            report, y_pred = crossval.cross_validation_report(X, y, self.clf, vis=True)
+            return y, y_pred
 
         else:
             text_train, text_test, y_train, y_test, X, y = self.TextClassifier.splitting_dataset(self.data_size, dataframe)
             self.Reports.cross_validation_report(self.clf, text_train, y_train, vis=True)
 
     def training(self, save_model=False):
-        dataframe = self.DataPreProcessor.to_dataframe(self.dataset)
-        dataframe = self.DataPreProcessor.transform_dataframe(dataframe)
+        DataPreProc = DataPreProcessor(self.dataset)
+        dataframe = DataPreProc.transformed_df
         dataframe = self.DataCleaner.remove_values(dataframe, 'Unknown')
         if self.data_unique:
             dataframe = self.DataCleaner.unique(dataframe)
@@ -338,34 +350,3 @@ class ClassificationPipeline:
         if save_model == True:
             self.TextClassifier.model_save(model, f'{self.clf}-{self.data_size}-{str(self.data_unique)}-{timestamp}')
 
-if __name__ == '__main__':
-    es = Elasticer()
-    
-    dataset_scraped = 'scrapy_test-early_mornin_4'
-    include_scraped = ['company_name', 'introduction', 'location', 'vacancy_title', 'description', 'job_category', 'contract_type']
-
-    dataset_xml = 'sj-uk-vacancies-scraped-cleaned-3'
-    exclude_xml = ['@language', 'DatePlaced', 'Id', 'companyLogo', 'country', 'topjob', 'HoursWeek', 'JobUrl', 'JobMinDaysPerWeek', 'JobParttime', 'JobCompanyBranch', 'JobCompanyProfile', 'JobRequirements.MinAge']
-    include_xml = ['JobBranch', 'JobCategory', 'JobCompany', 'JobDescription','JobLocation.LocationRegion', 'JobProfession', 'Title','TitleDescription', 'functionTitle', 'postalCode', 'profession']
-    
-    dataset_name = dataset_scraped
-    dataset = es.import_dataset(dataset_scraped, include_scraped)
-    filepath_prefix = f'pipeline-reports/{dataset_name}/{timestamp}'
-    os.makedirs(filepath_prefix, exist_ok=True) 
-    list_of_clf = ['SVM', 'SGD']
-    for clf in list_of_clf:
-        pipeline = ClassificationPipeline(clf=clf, dataset=dataset, data_size='all', filepath_prefix=filepath_prefix)
-        #pipeline.exploration()
-        pipeline.cross_validation()
-        #pipeline.training(save_model=True)
-
-
-
-#SNIPPETS?
-
-#dataframe.to_json('vacancy_data.json', orient='records')
-
-# data['label'] = '__label__' + data['label'].astype(str)
-# data.iloc[0:int(len(data)*0.8)].to_csv('vacancy_items_4_train.csv', sep='\t', index = False, header = False)
-# data.iloc[int(len(data)*0.8):int(len(data)*0.9)].to_csv('vacancy_items_4_dev.csv', sep='\t', index = False, header = False)
-# data.iloc[int(len(data)*0.9):].to_csv('vacancy_items_4_test.csv', sep='\t', index = False, header = False);

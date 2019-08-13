@@ -1,0 +1,21 @@
+version: "2"
+services:
+  elasticsearch:
+    extends:
+        file: elastic-stack/docker-compose.elastic.yml
+        service: elasticsearch
+
+  kibana:
+    extends:
+        file: elastic-stack/docker-compose.elastic.yml
+        service: kibana
+    
+  scipy-notebook:
+    extends:
+        file: scipy-notebook/docker-compose.scipynotebook.yml
+        service: scipy-notebook
+
+networks:
+  default:
+    external:
+      name: projectmonarch_default
