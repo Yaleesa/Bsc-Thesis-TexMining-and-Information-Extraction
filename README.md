@@ -45,13 +45,13 @@
 ### Containers:
 | name of container         | needed for |
 | ------------------      | ----------     |
-| `elasticsearch`   | indexing vacancy data |
-| `kibana` | Dashboard for metrics on the vacancy data |
-| `scipy-notebook`  | notebook with scipy tools and access to the ML pipeline modules |
+| `elasticsearch`   | indexing vacancy data (`localhost:9200`)|
+| `kibana` | Dashboard for metrics on the vacancy data (`localhost:5601`) |
+| `scipy-notebook`  | notebook with scipy tools and access to the ML pipeline modules (`localhost:8888`) |
 
 ### Data Collection:
- /link/to/projectmonarch
- 
+ [project Monarch](https://github.com/Yaleesa/project-Monarch)
+
 ### Requirements & Setup
 
 1. Docker
